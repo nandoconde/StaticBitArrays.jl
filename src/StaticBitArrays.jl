@@ -43,6 +43,9 @@ function SBitVector(chunks::Vector{Union{UInt,Int}}, L::Int)
     return SBitVector(reinterpret(NTuple{N,UInt}, chunks), L)
 end
 
+# Empty constructors
+SBitVector() = BitVector(NTuple{0,Int}, 0)
+
 
 ## Length (to avoid field accessing)
 @inline length(a::SBitVector) = a.len
@@ -92,24 +95,25 @@ end
 # _blsr(x) = x & (x-Int64(1))
 eltype(::SBitVector) = Bool
 
-@inline function iterate(a::SBitVector{N}) where N
-    N > 0 || return nothing
-    return iterate(a, (1, @inbounds a.chunks[1]))
+# First index is 1 to be consistent with usual array indexing, instead of Base.BitVector
+
+@inline function iterate(a::SBitVector{N}, s::Int = 1) where N
+    # Pre checks
+    N > 0 || s > 1 || s <= length(a) || return nothing
+
+    # Return current bool and next state
+    # TODO: Benchmark with @inbounds
+    return ((a.chunks[num_bit_chunks(s)] & (UInt64(1) << _mod64(s-1))) != 0, s + 1)
 end
 
-# TODO: continue here
-@inline function iterate(a::SBitVector{N}, s) where N
-    chunks = a.chunks
-    i1, c = s
-    while c==0
-        i1 % UInt >= N % UInt && return nothing
-        i1 += 1
-        @inbounds c = chunks[i1]
-    end
-    tz = trailing_zeros(c) + 1
-    c = _blsr(c)
-    return ((i1-1)<<6 + tz, (i1, c))
-end
+
+
+## Bitwise operations
+@inline Base.:&(L::UBitSet{N}, R::UBitSet{N}) where N =  SBitSet(ntuple(i->(L.chunks[i] & R.chunks[i]), Val{N}()))
+@inline Base.:|(L::UBitSet{N}, R::UBitSet{N}) where N =  SBitSet(ntuple(i->(L.chunks[i] | R.chunks[i]), Val{N}()))
+@inline xor(L::UBitSet{N}, R::UBitSet{N}) where N =  SBitSet(ntuple(i->xor(L.chunks[i], R.chunks[i]), Val{N}()))
+@inline ~(a::UBitSet{N}) where N = SBitSet(ntuple(i->~a.chunks[i], Val{N}()))
+
 
 
 # BitVector
